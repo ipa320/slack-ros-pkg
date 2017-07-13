@@ -17,10 +17,8 @@
     
 # Import required Python code.
 import time
-import roslib
 import rospy
 from std_msgs.msg import String
-import sys
 
 import requests
 
