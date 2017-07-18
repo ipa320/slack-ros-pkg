@@ -34,40 +34,64 @@ class SlackROS():
         self.username = rospy.get_param('~username', 'ros-bot')
 	
         # Create a publisher for our custom message.
-        pub = rospy.Publisher('from_slack_to_ros', String, queue_size=10)
-	rospy.Subscriber("from_ros_to_slack", String, self.callback)
-	rospy.Subscriber("send_file_to_slack", String, self.filecallback)
+        self.pub = rospy.Publisher('from_slack_to_ros', String, queue_size=10)
+        rospy.Subscriber("from_ros_to_slack", String, self.message_callback)
+        rospy.Subscriber("send_file_to_slack", String, self.file_callback)
 
-	# Create the slack client
-	self.sc = SlackClient(self.token)
+        # Create the slack client
+        self.slack_client = SlackClient(self.token)
+        self.has_connection = False
+        self.subscribed_msg_store = []
+        self.make_connection()
 
-	if self.sc.rtm_connect():
+    def make_connection(self):
+        try:
+            self.has_connection = self.slack_client.rtm_connect()
+            if self.has_connection:
+                rospy.loginfo("Slack connection stablished !")
+            else:
+                rospy.loginfo("Trying to establish slack connection ...")
+        except Exception as e:
+            rospy.logwarn("Error in establishing connection : %s", e)
 
-            # Main while loop.
-            while not rospy.is_shutdown():
-                for reply in self.sc.rtm_read():
-                    if "type" in reply and "user" in reply:
-                        #print reply
-                        if reply["type"] == "message" and reply["channel"] == self.channel:
-                            pub.publish(reply["text"])
-                
-	        # Sleep for a while before publishing new messages. Division is so rate != period.
+    def publish_to_ros(self):
+        # Main while loop.
+        while not rospy.is_shutdown():
+            for reply in self.slack_client.rtm_read():
+                if "type" in reply and "user" in reply:
+                    if reply["type"] == "message" and reply["channel"] == self.channel:
+                        self.pub.publish(reply["text"])
+            # Sleep for a while before publishing new messages. Division is so rate != period.
+            rospy.sleep(2.0)
+
+    def message_callback(self, data):
+        try:
+            self.msg_store.append(data)
+            if self.has_connection:
+                if len(self.subscribed_msg_store):
+                    for data in self.subscribed_msg_store:
+                        self.slack_client.api_call(
+                        "chat.postMessage", channel=self.channel, text=data.data,
+                        username=self.username, icon_emoji=':robot_face:')
+                        #rospy.loginfo(rospy.get_caller_id() + "I heard %s %s", data.data, self.channel)
+                    self.subscribed_msg_store[:] = []
+            else:
                 rospy.sleep(2.0)
+                self.make_connection()
+        except Exception as e:
+            rospy.logwarn("Error sending message, connection lost to server : %s", e)
+            rospy.sleep(2.0)
+            self.make_connection()
 
-    def callback(self, data):
-	self.sc.api_call(
-    	    "chat.postMessage", channel=self.channel, text=data.data,
-    	    username=self.username, icon_emoji=':robot_face:'
-	)
-        #rospy.loginfo(rospy.get_caller_id() + "I heard %s %s", data.data, self.channel)
-
-    def filecallback(self, data):
-        with open(data.data, 'rb') as file:
+    def file_callback(self, data):
+        try:
+            with open(data.data, 'rb') as file:
                 r = requests.post('https://slack.com/api/files.upload', files={'file': ['File '+data.data, file]}, params={
-                                        'token': self.token,
-                                        'channels': self.channel
-                })
-
+                'token': self.token, 'channels': self.channel})
+        except Exception as e:
+            rospy.logwarn("Error sending file, connection lost to server : %s", e)
+            rospy.sleep(2.0)
+            self.make_connection()
 
 # Main function.
 if __name__ == '__main__':
@@ -75,5 +99,7 @@ if __name__ == '__main__':
     rospy.init_node('slack_ros')
     # Go to class functions that do all the heavy lifting. Do error checking.
     try:
-        sr = SlackROS()
+        rospy.loginfo("ROS-Slack bot is running ...")
+        slack_ros = SlackROS()
+        slack_ros.publish_to_ros()
     except rospy.ROSInterruptException: pass
