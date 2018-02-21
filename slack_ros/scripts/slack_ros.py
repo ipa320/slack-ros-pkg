@@ -33,6 +33,8 @@ class SlackROS():
         self.token = rospy.get_param('~token', 'xoxp-123456789')
         self.channel = rospy.get_param('~channel', 'G1234567Q')
         self.username = rospy.get_param('~username', 'ros-bot')
+        self.msg_started = rospy.get_param('~msg_started', 'slack started')
+        self.msg_stopped = rospy.get_param('~msg_stopped', 'slack stopped')
 
         # Create a publisher for our custom message.
         pub = rospy.Publisher('from_slack_to_ros', String, queue_size=10)
@@ -41,6 +43,7 @@ class SlackROS():
 
         # Create the slack client
         self.sc = SlackClient(self.token)
+        self.post_message(self.msg_started)
 
         if self.sc.rtm_connect():
 
@@ -57,6 +60,8 @@ class SlackROS():
                     rospy.sleep(2.0)
                 except socket.error as e:
                     continue
+        
+        self.post_message(self.msg_stopped)
 
     def callback(self, data):
         self.post_message(data.data)
