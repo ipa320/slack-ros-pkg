@@ -13,5 +13,6 @@
   <exec_depend>rospy</exec_depend>
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>python-slackclient-pip</exec_depend>
+  <exec_depend>python-zmq</exec_depend>
 
 </package>
